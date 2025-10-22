@@ -75,7 +75,45 @@ class Mission:
 
     @classmethod
     def from_csv(cls, file_name: str):
-        # You are required to implement this method
+        # Read file and detect header
+        with open(file_name, 'r', newline='') as f:
+            first_line = f.readline()
+
+        has_header = any(ch.isalpha() for ch in first_line)
+
+        if has_header:
+            headers = [h.strip().lower() for h in first_line.strip().split(',')]
+            data = np.loadtxt(file_name, delimiter=',', skiprows=1)
+        else:
+            data = np.loadtxt(file_name, delimiter=',')
+
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+
+        # Helper to find a column index by candidate keywords
+        def _find_index(names, candidates):
+            for i, n in enumerate(names):
+                for c in candidates:
+                    if c in n:
+                        return i
+            return None
+
+        if has_header:
+            idx_ref = _find_index(headers, ('ref', 'reference', 'setpoint'))
+            idx_height = _find_index(headers, ('height', 'ceiling', 'cave_height', 'top'))
+            idx_depth = _find_index(headers, ('depth', 'floor', 'cave_depth', 'bottom'))
+
+            # Fallback to first three columns if any column not found
+            if idx_ref is None or idx_height is None or idx_depth is None:
+                idx_ref, idx_height, idx_depth = 0, 1, 2
+        else:
+            idx_ref, idx_height, idx_depth = 0, 1, 2
+
+        reference = data[:, idx_ref].astype(float)
+        cave_height = data[:, idx_height].astype(float)
+        cave_depth = data[:, idx_depth].astype(float)
+
+        return cls(reference, cave_height, cave_depth)
         pass
 
 
@@ -97,7 +135,7 @@ class ClosedLoop:
         for t in range(T):
             positions[t] = self.plant.get_position()
             observation_t = self.plant.get_depth()
-            # Call your controller here
+            actions[t] = self.controller(mission.reference[t], observation_t)
             self.plant.transition(actions[t], disturbances[t])
 
         return Trajectory(positions)
